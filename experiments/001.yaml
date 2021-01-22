@@ -1,0 +1,67 @@
+description: 3D MSE Unet nosigmoid
+
+resume:
+  path: false
+  epoch: false
+  reset_optimizer: false
+  reset_lr: false
+
+paths:
+  data: false
+  filters: false
+  models: false
+
+data:
+  input_type: video  # video or image
+  n_lines_range: [64, 256]  # range of lines of kspace we'll cut to
+  noise_factor_range: [0.0, 0.25]  # minimum and maximum noise
+  video:
+    training_frames: 32
+    testing_frames: 32
+  image:
+    neighbouring_frames:  1  # pre & post; 1 means total 3 frames
+
+training:
+  # Network
+  arch: unet
+  device: cuda
+  data_parallel: distributed  # false, local or distributed
+  mixed_precision: false
+  # Data settings
+  n_epochs: 50
+  batch_size_train: 5
+  batch_size_test: 5
+  n_workers: 6
+  n_folds: 5
+  # Loss function
+  train_criterion: mse
+  test_criterion: mse
+  sigmoid: false
+  # Optimizer & scheduler
+  optimizer:
+    type: adamw
+    lr: 5.0e-4
+    weight_decay: 5.0e-4  # 5.0e-4 reasonable for adamw
+  scheduler:
+    type: customonecycle
+    customonecycle: # custom one cycle (linear warm up)
+      max_lr: 1.0e-3
+      final_lr: 1.0e-10
+      pct_start: 0.3  # Loss
+
+transforms:
+  train:
+    img_size: [224, 224]
+    randomresizedcrop: [0.5, 1.0]  # 2 floats specifying scale range
+    grid_dropout: false  # [0.25, true]
+    shiftscalerotate: true
+    hflip: true
+    vflip: true
+  test:
+    random_start_frame: false
+    img_size: [256, 256]
+
+output:
+  log_freq: 10
+  save: best
+  n_vis: 8  # Batch size for the visualisation data loader
