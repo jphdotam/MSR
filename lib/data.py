@@ -21,10 +21,10 @@ def generate_noise(img_cat, noise_factor=0.25):
 
 def add_noise_to_gmap(gmap, noise_factor):
     noise = generate_noise(gmap, noise_factor=noise_factor)
-    nn = np.repeat(noise[:, :, np.newaxis], gmap.shape[2], axis=2) * gmap
-    return nn
+    gmap_noised = noise * gmap
+    return gmap_noised
 
 
 def add_noise_to_image(img_complex, gmap_noised):
-    img_noised = np.repeat(img_complex[:, :, :1], gmap_noised.shape[2], axis=2) + gmap_noised
+    img_noised = img_complex + gmap_noised
     return img_noised

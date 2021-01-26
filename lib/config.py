@@ -9,9 +9,9 @@ def load_config(configpath):
     experiment_id = os.path.splitext(os.path.basename(configpath))[0]
     cfg['experiment_id'] = experiment_id
 
-    cfg['paths']['nets'] = os.path.join(cfg['paths']['nets'], experiment_id)
+    cfg['paths']['models'] = os.path.join(cfg['paths']['models'], experiment_id)
 
-    for path in (cfg['paths']['dicoms'], cfg['paths']['nets']):
+    for path in (cfg['paths']['data'], cfg['paths']['models']):
         if not os.path.exists(path):
             try:
                 os.makedirs(path)

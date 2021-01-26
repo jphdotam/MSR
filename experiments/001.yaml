@@ -7,13 +7,14 @@ resume:
   reset_lr: false
 
 paths:
-  data: false
-  filters: false
-  models: false
+  data: /mnt/msr_data/
+  filters: /home/gtuser/msr_data/kspace_filters
+  models: /home/gtuser/msr_data/models
 
 data:
   input_type: video  # video or image
-  n_lines_range: [64, 256]  # range of lines of kspace we'll cut to
+  views: [ch2, ch3, ch4, lvot]
+  n_lines_range: [64, 128]  # range of lines of kspace we'll cut to
   noise_factor_range: [0.0, 0.25]  # minimum and maximum noise
   video:
     training_frames: 32
@@ -29,8 +30,8 @@ training:
   mixed_precision: false
   # Data settings
   n_epochs: 50
-  batch_size_train: 5
-  batch_size_test: 5
+  batch_size_train: 2
+  batch_size_test: 2
   n_workers: 6
   n_folds: 5
   # Loss function
@@ -41,7 +42,7 @@ training:
   optimizer:
     type: adamw
     lr: 5.0e-4
-    weight_decay: 5.0e-4  # 5.0e-4 reasonable for adamw
+    weight_decay: 5.0e-5  # 5.0e-4 reasonable for adamw
   scheduler:
     type: customonecycle
     customonecycle: # custom one cycle (linear warm up)
@@ -51,7 +52,7 @@ training:
 
 transforms:
   train:
-    img_size: [224, 224]
+    img_size: [256, 192]
     randomresizedcrop: [0.5, 1.0]  # 2 floats specifying scale range
     grid_dropout: false  # [0.25, true]
     shiftscalerotate: true
@@ -59,7 +60,7 @@ transforms:
     vflip: true
   test:
     random_start_frame: false
-    img_size: [256, 256]
+    img_size: [256, 192]
 
 output:
   log_freq: 10

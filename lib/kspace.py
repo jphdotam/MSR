@@ -16,10 +16,11 @@ def cut_and_filter_image_in_kspace(img_noised, n_lines_kspace, filter_dir):
     filter_row = np.load(os.path.join(filter_dir, f"filter_len_{rows_in}.npy"))
     filter_n_lines = np.load(os.path.join(filter_dir, f"filter_len_{n_lines_kspace}.npy"))
 
-    kspace_cut_filtered = np.dstack(
-        [filter_kspace(kspace_cut[:, :, i], filter_row, filter_n_lines) for i in range(kspace_cut.shape[2])])
+    # kspace_cut_filtered = np.dstack(
+    #     [filter_kspace(kspace_cut[:, :, i], filter_row, filter_n_lines) for i in range(kspace_cut.shape[2])])
+    kspace_cut_filtered = filter_kspace(kspace_cut, filter_row, filter_n_lines)
     kspace_small = np.zeros_like(kspace)
-    kspace_small[:, line_from:line_to] = kspace_cut_filtered  # Was kspace_cut ?bug
+    kspace_small[:, line_from:line_to] = kspace_cut_filtered
 
     # iFFT
     img_lowres = ifft2c(kspace_small)

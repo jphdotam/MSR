@@ -23,7 +23,7 @@ def vis_video(dataset_or_dataloader, model, epoch, cfg):
     else:
         dataloader = DataLoader(dataset_or_dataloader, bs_vis, shuffle=False, num_workers=1, pin_memory=True)
 
-    batch_x, batch_y_true, batch_study_id = next(iter(dataloader))
+    batch_x, batch_y_true, sample_dict = next(iter(dataloader))
 
     wandb_videos = []
 

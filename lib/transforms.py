@@ -35,7 +35,7 @@ def load_transforms(cfg):
         if transcfg.get("vflip", False):
             transforms.append(A.HorizontalFlip(p=0.25))
 
-        return A.Compose(transforms, keypoint_params=A.KeypointParams(format='xy', remove_invisible=False))
+        return A.Compose(transforms)
 
     train_transforms = get_transforms(cfg['transforms']['train'])
     test_transforms = get_transforms(cfg['transforms']['test'])

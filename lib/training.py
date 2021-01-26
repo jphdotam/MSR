@@ -32,7 +32,7 @@ class Am:
 
 
 def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, scheduler, local_rank=None):
-    log_freq = cfg['output']['print_every_iter']
+    log_freq = cfg['output']['log_freq']
     sigmoid = cfg['training']['sigmoid']
 
     meter_loss = Am()
@@ -52,7 +52,7 @@ def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, sc
     else:
         raise ValueError(f"train_or_test must be 'train', or 'test', not {train_or_test}")
 
-    for i_batch, (x, y_true) in enumerate(dataloader):
+    for i_batch, (x, y_true, sample_dict) in enumerate(dataloader):
         # Forward pass
         optimizer.zero_grad()
 

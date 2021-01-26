@@ -7,7 +7,7 @@ from torch.utils.data.distributed import DistributedSampler
 from lib.vis import vis_video
 from lib.models import load_model
 from lib.config import load_config
-from lib.datasets import MRS3DDataset
+from lib.datasets import MSR3DDataset
 from lib.losses import load_criterion
 from lib.optimizers import load_optimizer
 from lib.transforms import load_transforms
@@ -15,7 +15,7 @@ from lib.training import cycle, save_state
 
 import torch.distributed
 
-CONFIG = "/home/gtuser/mrs/experiments/008.yaml"
+CONFIG = "./experiments/001.yaml"
 
 def main():
     cfg = load_config(CONFIG)
@@ -42,8 +42,8 @@ def main():
     n_epochs = cfg['training']['n_epochs']
     transforms_train, transforms_test = load_transforms(cfg)
 
-    if cfg['data']['type'] == 'video':
-        dataset = MRS3DDataset
+    if cfg['data']['input_type'] == 'video':
+        dataset = MSR3DDataset
         vis = vis_video
     else:
         raise ValueError()
