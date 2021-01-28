@@ -34,6 +34,7 @@ class Am:
 def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, scheduler, local_rank=None):
     log_freq = cfg['output']['log_freq']
     sigmoid = cfg['training']['sigmoid']
+    prediction_type = cfg['training']['prediction_type']
 
     meter_loss = Am()
 
@@ -61,7 +62,12 @@ def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, sc
 
         # Forward pass
         with nullcontext() if training else torch.no_grad():
-            y_pred = model(x)
+            if prediction_type == 'absolute':
+                y_pred = model(x)
+            elif prediction_type == 'sum':
+                y_pred = model(x) + x
+            else:
+                raise ValueError(f"Unknown prediction_type {prediction_type}")
             if sigmoid:
                 y_pred = torch.sigmoid(y_pred)
             loss = criterion(y_pred, y_true)
@@ -82,7 +88,7 @@ def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, sc
                   f"\t\tLOSS: {meter_loss.running_average:.8f}")
 
             if train_or_test == 'train':
-                wandb.log({"batch": len(dataloader) * epoch + i_batch,
+                wandb.log({"batch": len(dataloader) * (epoch-1) + i_batch,
                            f"loss_{train_or_test}": meter_loss.running_average})
 
     loss = float(meter_loss.avg.detach().cpu().numpy())
@@ -94,7 +100,7 @@ def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, sc
 
     if not local_rank:
         print(f"{train_or_test.upper(): >5} Complete!"
-              f"\t\t\tLOSS: {meter_loss.avg:.6f}")
+              f"\t\t\tLOSS: {meter_loss.avg:.8f}")
 
         wandb.log({"epoch": epoch,
                    f"loss_{train_or_test}": meter_loss.avg})

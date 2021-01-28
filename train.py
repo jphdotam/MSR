@@ -15,7 +15,7 @@ from lib.training import cycle, save_state
 
 import torch.distributed
 
-CONFIG = "./experiments/001.yaml"
+CONFIG = "./experiments/004.yaml"
 
 def main():
     cfg = load_config(CONFIG)
@@ -51,8 +51,8 @@ def main():
     # data
     ds_train = dataset(cfg, 'train', transforms_train)
     ds_test = dataset(cfg, 'test', transforms_test)
-    sampler_train = DistributedSampler(ds_train, num_replicas=world_size, rank=local_rank) if distributed else None
-    sampler_test = DistributedSampler(ds_test, num_replicas=world_size, rank=local_rank) if distributed else None
+    sampler_train = DistributedSampler(ds_train, num_replicas=world_size, rank=local_rank, shuffle=True) if distributed else None
+    sampler_test = DistributedSampler(ds_test, num_replicas=world_size, rank=local_rank, shuffle=False) if distributed else None
     dl_train = DataLoader(ds_train, bs_train, shuffle=False if distributed else True, num_workers=n_workers, pin_memory=False, sampler=sampler_train)
     dl_test = DataLoader(ds_test, bs_test, shuffle=False, num_workers=n_workers, pin_memory=False, sampler=sampler_test)
 
@@ -63,7 +63,7 @@ def main():
 
     # WandB
     if not local_rank:
-        wandb.init(project="mrs", config=cfg, notes=cfg.get("description", None))
+        wandb.init(project="msr", config=cfg, notes=cfg.get("description", None))
         wandb.save("*.mp4")  # Write MP4 files immediately to WandB
         wandb.save("*.png")  # Write MP4 files immediately to WandB
         wandb.watch(model)

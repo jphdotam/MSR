@@ -9,7 +9,8 @@ def load_model(cfg, local_rank=None):
     data_parallel = cfg['training']['data_parallel']
 
     if arch == 'unet':
-        model = UNet(n_channels=1, n_classes=1)
+        unet_width_factor = cfg['training']['unet_width_factor']
+        model = UNet(n_channels=1, n_classes=1, width_multiplier=unet_width_factor)
     else:
         raise ValueError()
 

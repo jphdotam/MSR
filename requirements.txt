@@ -1,4 +1,9 @@
 pytorch
 numpy
+tqdm
 albumentations
 wandb
+moviepy  # for wandb video
+imageio  # for wandb video
+
+# To unzip: 7z x Barts_RetroCine_2020_AI_1mm_Jan.zip.001 -o/mnt/msr_data *.npy -r

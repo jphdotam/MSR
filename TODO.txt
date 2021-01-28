@@ -1,0 +1,4 @@
+Try predicting delta in image rather than image itself
+Configure width of network
+Sigmoid
+Bilinear vs convtranspose

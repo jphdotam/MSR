@@ -6,14 +6,20 @@ import torch
 from torch.utils.data import DataLoader
 
 
+def grayscale_video_to_rgb(input_video):
+    assert input_video.shape[1] == 1
+    video_out = np.tile(input_video, (1,3,1,1))
+    return video_out
+
+
 def vis_video(dataset_or_dataloader, model, epoch, cfg):
-    if epoch % cfg['output']['vis_every_epoch']:
-        return
 
     # Settings
     device = cfg['training']['device']
-    bs_vis = cfg['training']['n_vis']
     sigmoid = cfg['training']['sigmoid']
+    prediction_type = cfg['training']['prediction_type']
+    bs_vis = cfg['output']['n_vis']
+    video_format = cfg['output']['video_format']
 
     wandb_dict = {'epoch': epoch}
 
@@ -24,11 +30,19 @@ def vis_video(dataset_or_dataloader, model, epoch, cfg):
         dataloader = DataLoader(dataset_or_dataloader, bs_vis, shuffle=False, num_workers=1, pin_memory=True)
 
     batch_x, batch_y_true, sample_dict = next(iter(dataloader))
+    batch_x = batch_x.to(device)
 
     wandb_videos = []
 
+    model = model.eval()
+
     with torch.no_grad():
-        batch_y_pred = model(batch_x.to(device))
+        if prediction_type == 'absolute':
+            batch_y_pred = model(batch_x)
+        elif prediction_type == 'sum':
+            batch_y_pred = model(batch_x) + batch_x
+        else:
+            raise ValueError(f"Unknown prediction_type {prediction_type}")
         if sigmoid:
             batch_y_pred = torch.sigmoid(batch_y_pred)
         else:
@@ -39,8 +53,11 @@ def vis_video(dataset_or_dataloader, model, epoch, cfg):
             video_in = video_in.permute(1, 0, 2, 3).cpu().numpy()
             video_out_true = video_out_true.permute(1, 0, 2, 3).cpu().numpy()
             video_out_pred = video_out_pred.permute(1, 0, 2, 3).cpu().numpy()
-            video_combined = np.concatenate((video_in, video_out_pred, video_out_true), axis=3)
-            wandb_videos.append(wandb.Video(video_combined, fps=20, format="mp4"))
+            video_combined = (np.concatenate((video_in, video_out_pred, video_out_true), axis=3) * 255).astype(np.uint8)
+
+            video_combined = grayscale_video_to_rgb(video_combined)
+
+            wandb_videos.append(wandb.Video(video_combined, fps=20, format=video_format))
 
     wandb_dict["videos"] = wandb_videos
     wandb.log(wandb_dict)

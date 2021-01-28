@@ -5,25 +5,26 @@ import torch.nn.functional as F
 
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, channels=(32, 64, 128, 256, 512), bilinear=True, use_ds_conv=False):
+    def __init__(self, n_channels, n_classes, width_multiplier=1, bilinear=True, use_ds_conv=False):
         super(UNet, self).__init__()
+        _channels = (32, 64, 128, 256, 512)
         self.n_channels = n_channels
         self.n_classes = n_classes
-        self.channels = channels
+        self.channels = [int(c*width_multiplier) for c in _channels]
         self.bilinear = bilinear
         self.convtype = DepthwiseSeparableConv3d if use_ds_conv else nn.Conv3d
 
-        self.inc = DoubleConv(n_channels, channels[0], conv_type=self.convtype)
-        self.down1 = Down(channels[0], channels[1], conv_type=self.convtype)
-        self.down2 = Down(channels[1], channels[2], conv_type=self.convtype)
-        self.down3 = Down(channels[2], channels[3], conv_type=self.convtype)
+        self.inc = DoubleConv(n_channels, self.channels[0], conv_type=self.convtype)
+        self.down1 = Down(self.channels[0], self.channels[1], conv_type=self.convtype)
+        self.down2 = Down(self.channels[1], self.channels[2], conv_type=self.convtype)
+        self.down3 = Down(self.channels[2], self.channels[3], conv_type=self.convtype)
         factor = 2 if bilinear else 1
-        self.down4 = Down(channels[3], channels[4] // factor, conv_type=self.convtype)
-        self.up1 = Up(channels[4], channels[3] // factor, bilinear)
-        self.up2 = Up(channels[3], channels[2] // factor, bilinear)
-        self.up3 = Up(channels[2], channels[1] // factor, bilinear)
-        self.up4 = Up(channels[1], channels[0], bilinear)
-        self.outc = OutConv(channels[0], n_classes)
+        self.down4 = Down(self.channels[3], self.channels[4] // factor, conv_type=self.convtype)
+        self.up1 = Up(self.channels[4], self.channels[3] // factor, bilinear)
+        self.up2 = Up(self.channels[3], self.channels[2] // factor, bilinear)
+        self.up3 = Up(self.channels[2], self.channels[1] // factor, bilinear)
+        self.up4 = Up(self.channels[1], self.channels[0], bilinear)
+        self.outc = OutConv(self.channels[0], n_classes)
 
     def forward(self, x):
         x1 = self.inc(x)

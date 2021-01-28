@@ -12,7 +12,8 @@ def load_transforms(cfg):
             transforms.append(
                 A.RandomResizedCrop(height=img_height, width=img_width, scale=scale, ratio=(0.8, 1.2), p=1))
         else:
-            A.Resize(height=img_height, width=img_width)
+            transforms.append(A.PadIfNeeded(min_height=img_height, min_width=img_width))
+            transforms.append(A.CenterCrop(height=img_height, width=img_width))
 
         if transcfg.get("shiftscalerotate", False):
             transforms.append(A.ShiftScaleRotate(rotate_limit=(-45, 45)))

@@ -6,6 +6,7 @@ import hashlib
 import numpy as np
 import albumentations as A
 from glob import glob
+from tqdm import tqdm
 
 from torch.utils.data import Dataset
 
@@ -27,25 +28,34 @@ class MSRBaseDataset(Dataset):
 
     def __getitem__(self, idx):
         study_dict = self.samples[idx]
-        print(study_dict)
         study_id, real_data, imag_data, gmaps_data = self._load_npy_files_from_study_id(study_dict)
-        x, y = self.generate_data_and_label_from_npy_files(study_id, real_data, imag_data, gmaps_data)
+        try:
+            x, y = self.generate_data_and_label_from_npy_files(study_id, real_data, imag_data, gmaps_data)
+        except FloatingPointError:
+            print(f"Floating point error for {idx}: {study_dict}")
+            raise FloatingPointError
         return x, y, study_dict
 
     def get_samples(self):
         data_dir = self.cfg['paths']['data']
         views = self.cfg['data']['views']
+        invalid_sequences = self.cfg['data']['invalid_sequences']
         samples = []
         real_files = glob(os.path.join(data_dir, "**/images_for_gmap_real.npy"), recursive=True)
+        print(f"Found {len(real_files)} real files")
         for real_file in real_files:
             seq_dir = os.path.dirname(real_file)
-            study_id = os.path.basename(os.path.dirname(seq_dir))
+            study_id = os.path.basename(seq_dir)
+            if os.path.basename(seq_dir) in invalid_sequences:
+                # print(f"skipping {seq_dir}")
+                continue
 
             # Only load study into dataset if in validation fold and testing, or not and training
             validation_fold = self._get_validation_fold_for_file(study_id)
             if (self.train_or_test == 'test') == (self.fold == validation_fold):
                 view = os.path.basename(seq_dir).split('_', 1)[0]
                 if view not in views:
+                    print(f"{view} not in {views}")
                     continue
                 imag_file = os.path.join(seq_dir, "images_for_gmap_imag.npy")
                 gmap_file = os.path.join(seq_dir, "gmap_slc_1.npy")
@@ -56,6 +66,8 @@ class MSRBaseDataset(Dataset):
                                     'imag': imag_file,
                                     'gmaps': gmap_file,
                                     'view': view})
+                else:
+                    print(f"{imag_file}{os.path.exists(imag_file)}{gmap_file}{os.path.exists(gmap_file)}")
         print(f"{self.train_or_test.upper():<5} Loaded {len(samples)}")
         return samples
 
@@ -67,12 +79,10 @@ class MSRBaseDataset(Dataset):
 
         frame_from, frame_to = frame_range
 
-        video_complex = video_real[:, :, frame_from:frame_to + 1] + 1j * video_imag[:, :, frame_from:frame_to + 1]
+        video_complex = video_real[:, :, frame_from:frame_to] + 1j * video_imag[:, :, frame_from:frame_to]
         video_complex = video_complex.transpose(2, 0, 1)  # H*W*n_frames -> n_frames*H*W
         video_high = np.abs(video_complex)
         video_low = np.zeros(video_complex.shape, dtype=np.float32)
-
-        print(f"{video_real.shape=} {video_imag.shape=} {video_complex.shape=} {gmap.shape=}")
 
         for i_frame, (image_real, image_imag, image_complex) in enumerate(zip(video_real, video_imag, video_complex)):
             gmap_noised = lib.data.add_noise_to_gmap(gmap, noise_factor=noise_factor)
@@ -88,6 +98,8 @@ class MSRBaseDataset(Dataset):
         real_data = np.load(study_dict['real'])
         imag_data = np.load(study_dict['imag'])
         gmap_data = np.load(study_dict['gmaps'])
+        if gmap_data.shape[0] < gmap_data.shape[1]:
+            gmap_data = gmap_data.transpose((1, 0, 2))
         return study_id, real_data, imag_data, gmap_data
 
     def _get_validation_fold_for_file(self, file_path):
@@ -98,12 +110,13 @@ class MSRBaseDataset(Dataset):
 
     @staticmethod
     def _random_float_from_string(string):
+        """Better than seedings random.seed() with the study ID, which isn't random enough"""
         return int(hashlib.md5(str.encode(string)).hexdigest(), 16) / 16 ** 32
 
     @staticmethod
     def _normalise_data(*args, use_array0_for_norm=False):
         """Will rescale data so min/max pixel value are 5-95% intensity values
-        of THE FIRST VALUE if use_array0_for_norm==True and clip at 1"""
+        either array-wise or of the first if use_array0_for_norm==True and clip at 1"""
         def _norm(arr, mn, mx):
             if mn is None or mx is None:
                 mn, mx = np.percentile(arr, [5, 95])
@@ -119,24 +132,46 @@ class MSRBaseDataset(Dataset):
         else:
             return (_norm(arg, mn=None, mx=None) for arg in args)
 
+    def get_invalid_sequences(self):
+        """Some sequences seem to be all zeros after zip extraction.
+        We need to exclude those because they results in NaN loss for an entire epoch
+        We can do this by forcing an exception on dividing by zero during normalisation"""
+        np.seterr(all='raise')
+        invalid_ids = []
+        for i in tqdm(range(len(self.samples))):
+            try:
+                _ = self[i]
+            except FloatingPointError:
+                invalid_ids.append(i)
+        seq_names = [os.path.basename(self.samples[i]['seq_dir']) for i in invalid_ids]
+        print(f"{self.train_or_test:<5} {len(seq_names)} invalid sequences:\n{seq_names}")
+
 
 class MSR3DDataset(MSRBaseDataset):
 
     def generate_data_and_label_from_npy_files(self, study_id, video_real, video_imag, gmaps):
         n_frames_needed = self.cfg['data']['video'][f'{self.train_or_test}ing_frames']
         noise_factor_min, noise_factor_max = self.cfg['data']['noise_factor_range']
+        h_out, w_out = self.cfg['transforms'][self.train_or_test]['img_size']
         n_lines_min, n_lines_max = self.cfg['data']['n_lines_range']
 
         assert n_lines_max <= video_imag.shape[1], f"max kspace lines {n_lines_max} but video is {video_imag.shape}"
 
         # Get starting frame and ending frame, and noise factor
-        height, width, n_frames_available = video_imag.shape
-        max_frame_from = max(0, n_frames_available - n_frames_needed)
         if self.train_or_test == 'train':
             random.seed()
         else:
             random.seed(study_id)
 
+        # If multiple slices
+        if len(video_real.shape) == 4:
+            n_videos = video_real.shape[2]
+            n_video = random.randint(0, n_videos-1)
+            video_real = video_real[:, :, n_video, :]
+            video_imag = video_imag[:, :, n_video, :]
+
+        height, width, n_frames_available = video_imag.shape
+        max_frame_from = max(0, n_frames_available - n_frames_needed)
         frame_from = round(max_frame_from * random.random())
         frame_to = frame_from + n_frames_needed
         r_factor_channel = random.randint(0,3)
@@ -146,19 +181,30 @@ class MSR3DDataset(MSRBaseDataset):
 
         x, y = self.get_xy_from_videos(video_real, video_imag, gmap, (frame_from, frame_to), n_lines_kspace,
                                        noise_factor)
-        x, y = self._normalise_data(x, y)
+
+        np.seterr(all='raise')
+        try:
+            x, y = self._normalise_data(x, y)
+        except FloatingPointError:
+            print(f"Error with {study_id}")
+            raise FloatingPointError()
 
         seed = random.random()
 
-        for i_frame in range(len(x)):
-            frame = np.dstack((x[i_frame], y[i_frame]))  # H*W + H*W -> H*W*2
-            # reset the seed before every frame, so each frame is augmented identically
-            random.seed(seed)
+        x_out = np.zeros((len(x), h_out, w_out), dtype=np.float32)
+        y_out = np.zeros((len(x), h_out, w_out), dtype=np.float32)
 
+        for i_frame in range(len(x)):
+            random.seed(seed)  # reset the seed before every frame, so each frame is augmented identically
+
+            frame = np.dstack((x[i_frame], y[i_frame]))  # H*W + H*W -> H*W*2
             frame = self.transforms(image=frame)['image']
 
-            x[i_frame] = frame[:, :, 0]
-            y[i_frame] = frame[:, :, 1]
+            x_out[i_frame] = frame[:, :, 0]
+            y_out[i_frame] = frame[:, :, 1]
+
+        x = x_out
+        y = y_out
 
         # Append early frames if too few
         while len(x) < n_frames_needed:
@@ -173,14 +219,16 @@ class MSR3DDataset(MSRBaseDataset):
 
 
 if __name__ == "__main__":
+    import numpy as np
     import matplotlib.pyplot as plt
     from lib.config import load_config
     from lib.transforms import load_transforms
+    from torch.utils.data import DataLoader
 
-    cfg = load_config("../experiments/001.yaml")
-    trans_train, trans_test = load_transforms(cfg)
+    cfg = load_config("../experiments/002.yaml")
+    _, trans_test = load_transforms(cfg)
 
-    ds_train = MSR3DDataset(cfg, 'train', trans_train)
+    ds_train = MSR3DDataset(cfg, 'train', trans_test)  # test transforms for sake of assessing suitability
     ds_test = MSR3DDataset(cfg, 'test', trans_test)
 
     x, y, study_dict = ds_train[0]
@@ -188,8 +236,41 @@ if __name__ == "__main__":
     plt.imshow(x[0,0], cmap='gray'); plt.show()
     plt.imshow(y[0,0], cmap='gray'); plt.show()
 
-    for i, (x,y,sd) in enumerate(ds_train):
-        print(i)
-        pass
+    ds_train.get_invalid_sequences()
+    ds_test.get_invalid_sequences()
+
+    # # dl_train = DataLoader(ds_train, batch_size=2)
+    #
+    # # x_batch, y_batch, study_dicts = next(iter(ds_train))
+    #
+    # # np.seterr(all='raise')
+    # #
+    # # print('test cases')
+    # # for i in range(len(ds_test)):
+    # #     try:
+    # #         x, y, sd = ds_test[i]
+    # #     except Exception as e:
+    # #         print(f"{i} {e}")
+    #
+    # invalid_train = [747, 1475, 1754, 2493, 2510, 2741]
+    #
+    # seq_ids_train = []
+    #
+    # for i in invalid_train:
+    #     x, y, ds = ds_train[i]
+    #     seq_id = ds['seq_dir']
+    #     seq_ids_train.append(os.path.basename(seq_id))
+    #
+    # # invalid_test = []
+    # #
+    # # seq_ids_test = []
+    # #
+    # # for i in invalid_test:
+    # #     x, y, ds = ds_test[i]
+    # #     seq_id = ds['seq_dir']
+    # #     seq_ids_test.append(seq_id)
+    # #
+    # # seq_ids = seq_ids_train + seq_ids_test
+
 
 

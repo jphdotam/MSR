@@ -13,7 +13,7 @@ paths:
 
 data:
   input_type: video  # video or image
-  views: [ch2]
+  views: [ch2, ch3, ch4, aov, sax, lvot, rv]
   n_lines_range: [64, 128]  # range of lines of kspace we'll cut to
   noise_factor_range: [0.0, 0.25]  # minimum and maximum noise
   video:
@@ -21,19 +21,21 @@ data:
     testing_frames: 32
   image:
     neighbouring_frames:  1  # pre & post; 1 means total 3 frames
-  invalid_sequences: [sax_Retro_Lin_Cine_2DT_42110_971052286_971052295_405_20200120-172019, sax_Retro_Lin_Cine_2DT_41837_895538351_895538360_280_20200113-160936, sax_Retro_Lin_Cine_2DT_42110_1001986607_1001986616_965_20200130-132141, sax_Retro_Lin_Cine_2DT_41837_945312843_945312852_159_20200128-083514]
+  invalid_sequences: [rv_Retro_Lin_Cine_2DT_42110_968791105_968791114_94_20200119-100447, sax_Retro_Lin_Cine_2DT_42110_1001986607_1001986616_965_20200130-132141, sax_Retro_Lin_Cine_2DT_41837_954800328_954800337_317_20200130-122628, rv_Retro_Lin_Cine_2DT_66016_998348084_998348093_573_20200108-110734, sax_Retro_Lin_Cine_2DT_41837_945312843_945312852_159_20200128-083514, sax_Retro_Lin_Cine_2DT_41837_895538351_895538360_280_20200113-160936, sax_Retro_Lin_Cine_2DT_42110_971052286_971052295_405_20200120-172019, rv_Retro_Lin_Cine_2DT_66016_995284064_995284073_159_20200106-113423, sax_Retro_Lin_Cine_2DT_66016_1014420572_1014420581_155_20200114-105443]
 
 training:
   # Network
   arch: unet
+  unet_width_factor: 1
   device: cuda
   data_parallel: distributed  # false, local or distributed
   mixed_precision: false
+  prediction_type: sum  # sum (y_pred=model(x)+x) or absolute (y_pred=model(x))
   # Data settings
-  n_epochs: 50
-  batch_size_train: 2
-  batch_size_test: 2
-  n_workers: 6
+  n_epochs: 200
+  batch_size_train: 8
+  batch_size_test: 8
+  n_workers: 4  # Big GPU has 8 GPUs and 40 cores; this will use 32
   n_folds: 5
   # Loss function
   train_criterion: mse
