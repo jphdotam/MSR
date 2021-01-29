@@ -33,7 +33,7 @@ class Am:
 
 def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, scheduler, local_rank=None):
     log_freq = cfg['output']['log_freq']
-    sigmoid = cfg['training']['sigmoid']
+    activation = cfg['training']['activation']
     prediction_type = cfg['training']['prediction_type']
 
     meter_loss = Am()
@@ -68,8 +68,10 @@ def cycle(train_or_test, model, dataloader, epoch, criterion, optimizer, cfg, sc
                 y_pred = model(x) + x
             else:
                 raise ValueError(f"Unknown prediction_type {prediction_type}")
-            if sigmoid:
+            if activation == 'sigmoid':
                 y_pred = torch.sigmoid(y_pred)
+            elif activation == 'tanh':
+                y_pred = torch.tanh(y_pred)
             loss = criterion(y_pred, y_true)
 
         # Backward pass

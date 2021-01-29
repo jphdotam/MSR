@@ -7,7 +7,7 @@ from torch.utils.data.distributed import DistributedSampler
 from lib.vis import vis_video
 from lib.models import load_model
 from lib.config import load_config
-from lib.datasets import MSR3DDataset
+from lib.datasets import MSR3DDataset, MSR3RTDataset
 from lib.losses import load_criterion
 from lib.optimizers import load_optimizer
 from lib.transforms import load_transforms
@@ -15,7 +15,7 @@ from lib.training import cycle, save_state
 
 import torch.distributed
 
-CONFIG = "./experiments/004.yaml"
+CONFIG = "./experiments/005.yaml"
 
 def main():
     cfg = load_config(CONFIG)
@@ -40,10 +40,11 @@ def main():
     # settings
     bs_train, bs_test, n_workers = cfg['training']['batch_size_train'], cfg['training']['batch_size_test'], cfg['training']['n_workers']
     n_epochs = cfg['training']['n_epochs']
-    transforms_train, transforms_test = load_transforms(cfg)
+    transforms_train, transforms_test, transforms_rt = load_transforms(cfg)
 
     if cfg['data']['input_type'] == 'video':
         dataset = MSR3DDataset
+        rtdataset = MSR3RTDataset
         vis = vis_video
     else:
         raise ValueError()
@@ -51,6 +52,7 @@ def main():
     # data
     ds_train = dataset(cfg, 'train', transforms_train)
     ds_test = dataset(cfg, 'test', transforms_test)
+    ds_rtcine = rtdataset(cfg, transforms_rt)
     sampler_train = DistributedSampler(ds_train, num_replicas=world_size, rank=local_rank, shuffle=True) if distributed else None
     sampler_test = DistributedSampler(ds_test, num_replicas=world_size, rank=local_rank, shuffle=False) if distributed else None
     dl_train = DataLoader(ds_train, bs_train, shuffle=False if distributed else True, num_workers=n_workers, pin_memory=False, sampler=sampler_train)
@@ -93,7 +95,8 @@ def main():
             best_loss, last_save_path = save_state(state, save_name, test_loss, best_loss, cfg, last_save_path, lowest_best=True)
 
             # Vis seg
-            vis(ds_test, model, epoch, cfg)
+            vis(ds_test, model, epoch, cfg, wandb_id='test')
+            vis(ds_rtcine, model, epoch, cfg, wandb_id='rt')
 
     if local_rank == 0:
         save_name = f"FINAL_{epoch}_{test_loss:.05f}.pt"

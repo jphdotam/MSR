@@ -1,5 +1,7 @@
 import os
 import math
+from typing import Union
+
 import torch
 import random
 import hashlib
@@ -15,7 +17,7 @@ import lib.kspace
 
 
 class MSRBaseDataset(Dataset):
-    def __init__(self, cfg: dict, train_or_test: str, transforms: A.Compose, fold=1):
+    def __init__(self, cfg: dict, train_or_test: Union[str, None], transforms: A.Compose, fold: Union[int, None] = 1):
         self.cfg = cfg
         self.train_or_test = train_or_test
         self.transforms = transforms
@@ -68,7 +70,7 @@ class MSRBaseDataset(Dataset):
                                     'view': view})
                 else:
                     print(f"{imag_file}{os.path.exists(imag_file)}{gmap_file}{os.path.exists(gmap_file)}")
-        print(f"{self.train_or_test.upper():<5} Loaded {len(samples)}")
+        print(f"{self.train_or_test.upper():<6} Loaded {len(samples)}")
         return samples
 
     def generate_data_and_label_from_npy_files(self, study_id, real_data, imag_data, gmap_data):
@@ -218,15 +220,116 @@ class MSR3DDataset(MSRBaseDataset):
         return x, y
 
 
+class MSR3RTDataset(MSRBaseDataset):
+    """This ONLY returns native RT videos, to allow testing on unadulterated
+    Returns (x, y, studydict) - where x is a transformed RT, y is None, and studydict as normal"""
+    def __init__(self, cfg: dict, transforms: A.Compose):
+        super().__init__(cfg, train_or_test='rtcine', transforms=transforms, fold=None)
+
+    def __getitem__(self, idx):
+        study_dict = self.samples[idx]
+        study_id, img_data = self._load_npy_files_from_study_id(study_dict)
+        try:
+            y = self.generate_data_and_label_from_npy_files(study_id, img_data, gmaps=None)
+        except FloatingPointError:
+            print(f"Floating point error for {idx}: {study_dict}")
+            raise FloatingPointError
+        return y, {}, study_dict
+
+    def get_samples(self):
+        data_dir = self.cfg['paths']['rt_data']
+        invalid_sequences = self.cfg['data']['invalid_sequences']
+        samples = []
+        img_files = glob(os.path.join(data_dir, "**/im.npy"), recursive=True)
+        print(f"Found {len(img_files)} img files")
+        for img_file in img_files:
+            seq_dir = os.path.dirname(img_file)
+            study_id = os.path.basename(seq_dir)
+
+            if os.path.basename(seq_dir) in invalid_sequences:
+                # print(f"skipping {seq_dir}")
+                continue
+
+            samples.append({'study_id': study_id,
+                            'seq_dir': seq_dir,
+                            'img': img_file})
+
+        print(f"RTCINE Loaded {len(samples)}")
+        return samples
+
+    def _load_npy_files_from_study_id(self, study_dict):
+        study_id = study_dict['study_id']
+        img_data = np.load(study_dict['img'])
+        return study_id, img_data
+
+    def generate_data_and_label_from_npy_files(self, study_id, rt_video_data, gmaps=None):
+        assert gmaps is None
+        n_frames_needed = self.cfg['data']['video']['rtcine_frames']
+        h_out, w_out = self.cfg['transforms']['rtcine']['img_size']
+
+        random.seed(study_id)
+
+        # If multiple slices
+        if len(rt_video_data.shape) == 4:
+            n_videos = rt_video_data.shape[2]
+            n_video = random.randint(0, n_videos-1)
+            rt_video_data = rt_video_data[:, :, n_video, :]
+
+        height, width, n_frames_available = rt_video_data.shape
+        max_frame_from = max(0, n_frames_available - n_frames_needed)
+        frame_from = round(max_frame_from * random.random())
+        frame_to = frame_from + n_frames_needed
+
+        y = self.get_y_for_rt_video(rt_video_data, (frame_from, frame_to))
+
+        np.seterr(all='raise')
+        try:
+            y = list(self._normalise_data(y))[0]
+        except FloatingPointError:
+            print(f"Error with {study_id}")
+            raise FloatingPointError()
+
+        seed = random.random()
+
+        y_out = np.zeros((len(y), h_out, w_out), dtype=np.float32)
+
+        for i_frame in range(len(y)):
+            random.seed(seed)  # reset the seed before every frame, so each frame is augmented identically
+
+            frame = y[i_frame]
+            frame = self.transforms(image=frame)['image']
+
+            y_out[i_frame] = frame
+
+        y = y_out
+
+        # Append early frames if too few
+        while len(y) < n_frames_needed:
+            missing_frames = n_frames_needed - y.shape[0]
+            y = np.concatenate((y, y[:missing_frames]), axis=0)
+
+        y = torch.from_numpy(y).float().unsqueeze(0)
+
+        return y
+
+    @staticmethod
+    def get_y_for_rt_video(rt_video, frame_range):
+        frame_from, frame_to = frame_range
+
+        rt_video = rt_video[:, :, frame_from:frame_to]
+        rt_video = rt_video.transpose(2, 0, 1)  # H*W*n_frames -> n_frames*H*W
+
+        return rt_video
+
+
 if __name__ == "__main__":
     import numpy as np
     import matplotlib.pyplot as plt
     from lib.config import load_config
     from lib.transforms import load_transforms
-    from torch.utils.data import DataLoader
 
     cfg = load_config("../experiments/002.yaml")
-    _, trans_test = load_transforms(cfg)
+    _, trans_test, trans_rtcine = load_transforms(cfg)
 
     ds_train = MSR3DDataset(cfg, 'train', trans_test)  # test transforms for sake of assessing suitability
     ds_test = MSR3DDataset(cfg, 'test', trans_test)
@@ -271,6 +374,3 @@ if __name__ == "__main__":
     # #     seq_ids_test.append(seq_id)
     # #
     # # seq_ids = seq_ids_train + seq_ids_test
-
-
-

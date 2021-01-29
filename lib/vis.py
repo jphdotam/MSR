@@ -12,11 +12,11 @@ def grayscale_video_to_rgb(input_video):
     return video_out
 
 
-def vis_video(dataset_or_dataloader, model, epoch, cfg):
+def vis_video(dataset_or_dataloader, model, epoch, cfg, wandb_id, sync_with_wandb=True):
 
     # Settings
     device = cfg['training']['device']
-    sigmoid = cfg['training']['sigmoid']
+    activation = cfg['training']['activation']
     prediction_type = cfg['training']['prediction_type']
     bs_vis = cfg['output']['n_vis']
     video_format = cfg['output']['video_format']
@@ -32,7 +32,7 @@ def vis_video(dataset_or_dataloader, model, epoch, cfg):
     batch_x, batch_y_true, sample_dict = next(iter(dataloader))
     batch_x = batch_x.to(device)
 
-    wandb_videos = []
+    list_of_videos = []
 
     model = model.eval()
 
@@ -43,21 +43,32 @@ def vis_video(dataset_or_dataloader, model, epoch, cfg):
             batch_y_pred = model(batch_x) + batch_x
         else:
             raise ValueError(f"Unknown prediction_type {prediction_type}")
-        if sigmoid:
+        if activation == 'sigmoid':
             batch_y_pred = torch.sigmoid(batch_y_pred)
+        elif activation == 'tanh':
+            batch_y_pred = torch.tanh(batch_y_pred)
         else:
             batch_y_pred = torch.clamp(batch_y_pred, min=0, max=1)
+
+        if batch_y_true == {}:
+            batch_y_true = [None] * len(batch_x)
 
         for i, (video_in, video_out_pred, video_out_true) in enumerate(zip(batch_x, batch_y_pred, batch_y_true)):
             # Weights and biases wants "time, channels, height, width"
             video_in = video_in.permute(1, 0, 2, 3).cpu().numpy()
-            video_out_true = video_out_true.permute(1, 0, 2, 3).cpu().numpy()
             video_out_pred = video_out_pred.permute(1, 0, 2, 3).cpu().numpy()
-            video_combined = (np.concatenate((video_in, video_out_pred, video_out_true), axis=3) * 255).astype(np.uint8)
+            if video_out_true is None:
+                video_combined = (np.concatenate((video_in, video_out_pred), axis=3) * 255).astype(np.uint8)
+            else:
+                video_out_true = video_out_true.permute(1, 0, 2, 3).cpu().numpy()
+                video_combined = (np.concatenate((video_in, video_out_pred, video_out_true), axis=3) * 255).astype(np.uint8)
 
             video_combined = grayscale_video_to_rgb(video_combined)
 
-            wandb_videos.append(wandb.Video(video_combined, fps=20, format=video_format))
+            list_of_videos.append(wandb.Video(video_combined, fps=20, format=video_format))
 
-    wandb_dict["videos"] = wandb_videos
-    wandb.log(wandb_dict)
+    wandb_dict[f"videos_{wandb_id}"] = list_of_videos
+    if sync_with_wandb:
+        wandb.log(wandb_dict)
+
+    return list_of_videos

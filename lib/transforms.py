@@ -40,5 +40,6 @@ def load_transforms(cfg):
 
     train_transforms = get_transforms(cfg['transforms']['train'])
     test_transforms = get_transforms(cfg['transforms']['test'])
+    rtcine_transforms = get_transforms(cfg['transforms']['rtcine'])
 
-    return train_transforms, test_transforms
+    return train_transforms, test_transforms, rtcine_transforms
